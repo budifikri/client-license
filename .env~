@@ -1,0 +1,6 @@
+PORT=3001
+#VITE_URL_API=http://localhost:3000
+VITE_URL_API=https://license.fikrihost.my.id
+VITE_PRODUCT_ID=cmh1hjf9o000c2pj0ao69yzpq
+VITE_CHANNEL=device monitoring
+

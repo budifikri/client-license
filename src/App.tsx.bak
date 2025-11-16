@@ -1,0 +1,771 @@
+import { useState, useEffect } from "react";
+import toast, { Toaster } from "react-hot-toast";
+
+const App = () => {
+  const [deviceStatus, setDeviceStatus] = useState<"active" | "inactive">(
+    "inactive"
+  );
+  const [isOnline, setIsOnline] = useState(false);
+  const [currentView, setCurrentView] = useState<
+    "login" | "activation" | "product" | "payment" | "confirmation" | "success"
+  >("login");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [computerId, setComputerId] = useState<string | null>(null);
+  const [deviceActivationStatus, setDeviceActivationStatus] = useState<{ count: number; isActive: boolean } | null>(null);
+  const [monitoringCleanup, setMonitoringCleanup] = useState<(() => void) | null>(null);
+
+  useEffect(() => {
+    const savedStatus = localStorage.getItem("deviceStatus") as
+      | "active"
+      | "inactive"
+      | null;
+    if (savedStatus) {
+      setDeviceStatus(savedStatus);
+      setCurrentView(savedStatus === "active" ? "login" : "activation");
+    } else {
+      setDeviceStatus("inactive");
+      setCurrentView("activation");
+    }
+  }, []);
+
+  // Effect to handle device activation status changes and start monitoring when needed
+  useEffect(() => {
+    if (deviceActivationStatus && deviceActivationStatus.count === 1 && computerId) {
+      console.log("Device is registered, starting monitoring for computerId:", computerId);
+      
+      // Clean up any existing monitoring
+      if (monitoringCleanup) {
+        monitoringCleanup();
+      }
+      
+      // Start new monitoring and store the cleanup function
+      const cleanup = startDeviceMonitoring(computerId);
+      if (cleanup) {
+        setMonitoringCleanup(() => cleanup);
+      }
+    } else if (deviceActivationStatus && deviceActivationStatus.count !== 1 && monitoringCleanup) {
+      // Stop monitoring if device is no longer registered
+      monitoringCleanup();
+      setMonitoringCleanup(null);
+    }
+  }, [deviceActivationStatus, computerId, monitoringCleanup]);
+
+  // Clean up monitoring on component unmount
+  useEffect(() => {
+    return () => {
+      if (monitoringCleanup) {
+        monitoringCleanup();
+      }
+    };
+  }, [monitoringCleanup]);
+
+  useEffect(() => {
+    if (currentView === "login") {
+      checkApiConnection().then(async (isOnline) => {
+        if (isOnline) {
+          try {
+            // Get system data from localStorage or API
+            let rawDeviceInfo: any = null;
+            const deviceInfo = localStorage.getItem("deviceInfo");
+            if (deviceInfo) {
+              let storedDeviceInfo = JSON.parse(deviceInfo);
+
+              // Transform stored device info if it still has old property names
+              if (
+                storedDeviceInfo &&
+                (storedDeviceInfo["Nama Komputer"] ||
+                  storedDeviceInfo["Platform"] ||
+                  storedDeviceInfo["Memory"])
+              ) {
+                // It has old property names, transform to new ones
+                rawDeviceInfo = {
+                  HOST:
+                    storedDeviceInfo["Nama Komputer"] ||
+                    storedDeviceInfo["host"] ||
+                    "unknown",
+                  User: storedDeviceInfo["User"] || "unknown",
+                  OS:
+                    storedDeviceInfo["Platform"] ||
+                    storedDeviceInfo["platform"] ||
+                    "unknown",
+                  Arsitektur: storedDeviceInfo["Arsitektur"] || "unknown",
+                  cpu:
+                    storedDeviceInfo["CPU"] ||
+                    storedDeviceInfo["cpu"] ||
+                    "unknown",
+                  RAM:
+                    storedDeviceInfo["Memory"] ||
+                    storedDeviceInfo["memory"] ||
+                    "unknown",
+                  // Preserve other properties
+                  timestamp: storedDeviceInfo["timestamp"],
+                  system: storedDeviceInfo["system"],
+                  motherboard: storedDeviceInfo["motherboard"],
+                  disk: storedDeviceInfo["disk"],
+                  network: storedDeviceInfo["network"],
+                  os: storedDeviceInfo["os"],
+                  gpu: storedDeviceInfo["gpu"],
+                };
+
+                // Remove undefined properties to keep the object clean
+                const cleanRawDeviceInfo: any = {};
+                Object.keys(rawDeviceInfo).forEach((key) => {
+                  if (
+                    rawDeviceInfo[key as keyof typeof rawDeviceInfo] !==
+                    undefined
+                  ) {
+                    cleanRawDeviceInfo[key] =
+                      rawDeviceInfo[key as keyof typeof rawDeviceInfo];
+                  }
+                });
+
+                rawDeviceInfo = cleanRawDeviceInfo;
+
+                // Update localStorage with the transformed version
+                localStorage.setItem(
+                  "deviceInfo",
+                  JSON.stringify(rawDeviceInfo)
+                );
+              } else {
+                // It already has new property names or is in the new format
+                rawDeviceInfo = storedDeviceInfo;
+              }
+            } else {
+              const systemDataResponse = await fetch("/api/system-data");
+              let apiDeviceInfo = await systemDataResponse.json();
+
+              // Transform the device info object by replacing old property names with new ones
+              const transformedDeviceInfo = {
+                HOST:
+                  apiDeviceInfo["Nama Komputer"] ||
+                  apiDeviceInfo["host"] ||
+                  "unknown",
+                User: apiDeviceInfo["User"] || "unknown",
+                OS:
+                  apiDeviceInfo["Platform"] ||
+                  apiDeviceInfo["platform"] ||
+                  "unknown",
+                Arsitektur: apiDeviceInfo["Arsitektur"] || "unknown",
+                cpu: apiDeviceInfo["CPU"] || apiDeviceInfo["cpu"] || "unknown",
+                RAM:
+                  apiDeviceInfo["Memory"] ||
+                  apiDeviceInfo["memory"] ||
+                  "unknown",
+                // Add other properties that might exist
+                timestamp: apiDeviceInfo["timestamp"],
+                system: apiDeviceInfo["system"],
+                motherboard: apiDeviceInfo["motherboard"],
+                disk: apiDeviceInfo["disk"],
+                network: apiDeviceInfo["network"],
+                os: apiDeviceInfo["os"],
+                gpu: apiDeviceInfo["gpu"],
+              };
+
+              // Remove undefined properties to keep the object clean
+              const cleanTransformedDeviceInfo: any = {};
+              Object.keys(transformedDeviceInfo).forEach((key) => {
+                if (
+                  transformedDeviceInfo[
+                    key as keyof typeof transformedDeviceInfo
+                  ] !== undefined
+                ) {
+                  cleanTransformedDeviceInfo[key] =
+                    transformedDeviceInfo[
+                      key as keyof typeof transformedDeviceInfo
+                    ];
+                }
+              });
+
+              rawDeviceInfo = cleanTransformedDeviceInfo;
+              localStorage.setItem("deviceInfo", JSON.stringify(rawDeviceInfo));
+
+              rawDeviceInfo = transformedDeviceInfo;
+              localStorage.setItem("deviceInfo", JSON.stringify(rawDeviceInfo));
+            }
+            console.log("rawDeviceInfo:", JSON.stringify(rawDeviceInfo));
+            // Use the new property names for API calls
+            const host =
+              rawDeviceInfo["HOST"] ||
+              rawDeviceInfo["Nama Komputer"] ||
+              rawDeviceInfo["host"] ||
+              "-";
+            const cpu = rawDeviceInfo["cpu"] || rawDeviceInfo["CPU"] || "-";
+
+            // API call to generate unique ID
+            const apiUrl =
+              import.meta.env.VITE_URL_API || "http://localhost:3000";
+            const uniqueId = encodeURIComponent(`${host}-${cpu}`);
+            const generateIdUrl = `${apiUrl}/api/device/generate_id/${uniqueId}`;
+            console.log("Making request to generate ID:", generateIdUrl);
+
+            const generateResponse = await fetch(generateIdUrl, {
+              method: "GET",
+              headers: {
+                accept: "application/json",
+              },
+            });
+
+            console.log(
+              "Generate ID response status:",
+              generateResponse.status
+            );
+            if (generateResponse.ok) {
+              const generateResult = await generateResponse.json();
+              console.log("Generate ID response:", generateResult);
+
+              // Extract uniqueId from the response
+              const uniqueId =
+                generateResult.uniqueId || generateResult.id || generateResult;
+              console.log("Unique ID received:", uniqueId);
+
+              // Update state with the uniqueId as computerId
+              setComputerId(uniqueId);
+
+              // Make the second API call with the uniqueId
+              const checkDeviceUrl = `${apiUrl}/api/devices/computer_id/${uniqueId}`;
+              console.log("Making request to check device:", checkDeviceUrl);
+
+              const checkResponse = await fetch(checkDeviceUrl, {
+                method: "GET",
+                headers: {
+                  accept: "application/json",
+                },
+              });
+
+              console.log(
+                "Check device response status:",
+                checkResponse.status
+              );
+              const checkResult = await checkResponse.json();
+              console.log("Check device response:", checkResult);
+              
+              // Update device activation status based on the response
+              if (checkResult && typeof checkResult === 'object') {
+                const status = {
+                  count: checkResult.count !== undefined ? checkResult.count : (checkResult.length !== undefined ? checkResult.length : (checkResult.data ? checkResult.data.length : 0)),
+                  isActive: checkResult.isActive !== undefined ? checkResult.isActive : (checkResult.data && checkResult.data.length > 0 ? checkResult.data[0].isActive : false)
+                };
+                setDeviceActivationStatus(status);
+                
+                // If device is registered (count = 1) then start WebSocket monitoring
+                if (status.count === 1) {
+                  startDeviceMonitoring(uniqueId);
+                }
+                
+                console.log("Device activation status:", status);
+              } else {
+                // If response is an array or primitive, default to appropriate values
+                if (Array.isArray(checkResult)) {
+                  const status = {
+                    count: checkResult.length,
+                    isActive: checkResult.length > 0 ? (checkResult[0].isActive || false) : false
+                  };
+                  setDeviceActivationStatus(status);
+                  
+                  // If device is registered (count = 1) then start WebSocket monitoring
+                  if (status.count === 1) {
+                    startDeviceMonitoring(uniqueId);
+                  }
+                  
+                  console.log("Device activation status:", status);
+                } else {
+                  // If response format is unexpected, default to no device found
+                  setDeviceActivationStatus({ count: 0, isActive: false });
+                }
+              }
+            } else {
+              console.error(
+                "Failed to generate ID:",
+                await generateResponse.text()
+              );
+            }
+          } catch (error) {
+            console.error("Error during device ID generation:", error);
+          }
+        }
+      });
+
+      // Check registry via localStorage
+      const deviceInfo = localStorage.getItem("deviceInfo");
+      const registryExists = deviceInfo !== null;
+      console.log("Registry key exists:", registryExists);
+      if (!registryExists) {
+        // Get system data from API and write to localStorage
+        fetch("/api/system-data")
+          .then((res) => res.json())
+          .then((systemData) => {
+            localStorage.setItem("deviceInfo", JSON.stringify(systemData));
+            console.log("System Data:", systemData);
+            console.log("Write to localStorage successful");
+          })
+          .catch((err) => console.error("Error getting system data:", err));
+      } else {
+        // Read existing data
+        const existingData = JSON.parse(deviceInfo);
+        console.log("Existing registry data:", existingData);
+      }
+    }
+  }, [currentView]);
+
+  const checkApiConnection = async (): Promise<boolean> => {
+    const apiUrl =
+      (import.meta.env.VITE_URL_API || "http://localhost:3000") + "/health";
+    console.log("Attempting to connect to API:", apiUrl); // Debug log
+    console.log("Headers being sent: accept: application/json"); // Debug log for header
+    try {
+      const response = await fetch(apiUrl, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+        },
+        mode: "cors",
+        signal: AbortSignal.timeout(5000),
+      });
+      console.log("API response status:", response.status); // Debug log
+      console.log("API response ok:", response.ok); // Debug log
+
+      // Add debugging for response body
+      const responseBody = await response.text();
+      console.log("API response body:", responseBody); // Debug log for response body
+      console.log("Full response object:", response); // Debug log for full response object
+
+      const online = response.ok;
+      setIsOnline(online);
+      if (online) {
+        // toast.success("Koneksi berhasil!");
+      } else {
+        toast.error("🔍 Mengecek koneksi... Koneksi gagal!");
+      }
+      return online;
+    } catch (error) {
+      console.error("API connection error:", error); // Debug log
+      setIsOnline(false);
+      toast.error("🔍 Mengecek koneksi... Koneksi gagal!");
+      return false;
+    }
+  };
+
+  const activateDevice = async () => {
+    const online = await checkApiConnection();
+    if (!online) return toast.error("⚠️ Offline — periksa koneksi Anda.");
+
+    try {
+      // Get system data from API
+      const systemDataResponse = await fetch("/api/system-data");
+      const rawDeviceInfo = await systemDataResponse.json();
+
+      // Map device info to the required format with new property names
+      const deviceInfo = {
+        computerId: computerId || "unknown", // Use the computerId obtained during login
+        name:
+          rawDeviceInfo["HOST"] ||
+          rawDeviceInfo["host"] ||
+          rawDeviceInfo["Nama Komputer"],
+        os: rawDeviceInfo["OS"] || rawDeviceInfo["Platform"],
+        processor: rawDeviceInfo["cpu"] || rawDeviceInfo["CPU"],
+        ram: parseInt(
+          (rawDeviceInfo["RAM"] || rawDeviceInfo["Memory"]).replace(" MB", "")
+        ),
+      };
+
+      // Get environment variables
+      const apiUrl = import.meta.env.VITE_URL_API || "http://localhost:3000";
+      const productId = import.meta.env.VITE_PRODUCT_ID || "";
+      const baseUrl = window.location.origin;
+
+      // Make POST request to activation endpoint
+      const requestData = {
+        productId,
+        deviceInfo,
+        base_url: baseUrl,
+      };
+      console.log("Request data:", requestData);
+
+      // Create refactored device info for the URL with new property names
+      const refactoredDeviceInfo = {
+        HOST:
+          rawDeviceInfo["HOST"] ||
+          rawDeviceInfo["Nama Komputer"] ||
+          rawDeviceInfo["host"],
+        User: rawDeviceInfo["User"] || "unknown",
+        OS: rawDeviceInfo["OS"] || rawDeviceInfo["Platform"] || "unknown",
+        Arsitektur: rawDeviceInfo["Arsitektur"] || "unknown",
+        cpu: rawDeviceInfo["cpu"] || rawDeviceInfo["CPU"] || "unknown",
+        RAM: rawDeviceInfo["RAM"] || rawDeviceInfo["Memory"] || "unknown",
+      };
+
+      // Construct the URL for activation
+      const deviceInfoEncoded = encodeURIComponent(
+        JSON.stringify(refactoredDeviceInfo)
+      );
+      const activationUrl = `${apiUrl}/#/product_license?productId=${productId}&deviceInfo=${deviceInfoEncoded}&base_url=${encodeURIComponent(
+        baseUrl
+      )}`;
+
+      console.log("Activation URL:", activationUrl);
+
+      // Open in new tab
+      window.open(activationUrl, "_self");
+
+      // toast.success("✅ Permintaan aktivasi dikirim");
+      // setCurrentView("success");
+    } catch (error) {
+      console.error("Error activating device:", error);
+      toast.error("❌ Gagal mengaktifkan perangkat");
+    }
+  };
+
+  const handleLogin = () => {
+    if (!email || !password)
+      return toast.error("⚠️ Email dan password wajib diisi!");
+    const toastId = toast.loading("🔐 Login...");
+    setTimeout(() => {
+      toast.dismiss(toastId);
+      if (deviceStatus === "active") {
+        toast.success("✅ Device aktif & login berhasil!");
+        setCurrentView("success");
+      } else toast.error("⚠️ Device belum diaktivasi!");
+    }, 1500);
+  };
+
+  const handleProductSelect = (id: string) => {
+    setSelectedProduct(id);
+    setCurrentView("payment");
+  };
+
+  const handlePayment = () => {
+    const toastId = toast.loading("💳 Memproses pembayaran...");
+    setTimeout(() => {
+      toast.dismiss(toastId);
+      toast.success("Pembayaran diproses!");
+      setCurrentView("confirmation");
+    }, 2000);
+  };
+
+  const handleConfirmation = () => {
+    const toastId = toast.loading("🔄 Mengonfirmasi pembayaran...");
+    setTimeout(() => {
+      localStorage.setItem("deviceStatus", "active");
+      setDeviceStatus("active");
+      toast.dismiss(toastId);
+      toast.success("Pembayaran dikonfirmasi!");
+      setCurrentView("success");
+    }, 1500);
+  };
+
+  // Function to start device monitoring via WebSocket
+  const startDeviceMonitoring = (computerId: string | null) => {
+    if (!computerId) {
+      console.error("Computer ID is null, cannot start monitoring");
+      return;
+    }
+
+    // Create WebSocket connection for monitoring
+    const wsUrl = `${import.meta.env.VITE_URL_WS || "ws://localhost:3000"}/ws/device`;
+    console.log("Connecting to monitoring WebSocket:", wsUrl);
+    
+    // @ts-ignore - WebSocket might not be available in all environments
+    let ws: WebSocket | null = new WebSocket(wsUrl);
+
+    // State to keep track of the WebSocket and interval
+    let pingInterval: NodeJS.Timeout | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    // Function to attempt reconnection
+    const reconnect = () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      reconnectTimeout = setTimeout(() => {
+        console.log('Attempting to reconnect to monitoring WebSocket...');
+        if (ws && ws.readyState === WebSocket.CLOSED) {
+          // Create a new WebSocket connection
+          // @ts-ignore - WebSocket might not be available in all environments
+          ws = new WebSocket(wsUrl);
+          
+          // Reassign event handlers to the new connection
+          setupEventHandlers();
+        }
+      }, 5000); // Try to reconnect every 5 seconds
+    };
+
+    // Function to set up event handlers
+    const setupEventHandlers = () => {
+      if (!ws) return;
+      
+      // Clear any previous handlers to avoid duplicates
+      ws.onopen = () => {
+        console.log('Connected to monitoring');
+        
+        // Send ping every 5 seconds
+        pingInterval = setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ 
+              type: 'ping', 
+              computerId: computerId 
+            }));
+          } else {
+            console.log('WebSocket is not open, cannot send ping');
+          }
+        }, 5000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Message from monitoring server:', data);
+          
+          // Handle different message types if needed
+          if (data.type === 'pong') {
+            console.log('Received pong from server');
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        console.log('Monitoring WebSocket connection closed');
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = null;
+        }
+        // Attempt to reconnect
+        reconnect();
+      };
+    };
+
+    // Initialize event handlers
+    setupEventHandlers();
+
+    // Return a cleanup function for future use if needed
+    return () => {
+      if (pingInterval) {
+        clearInterval(pingInterval);
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (ws) {
+        // Remove event handlers to prevent memory leaks
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      }
+    };
+  };
+
+  // const resetDevice = () => {
+  //   localStorage.setItem("deviceStatus", "inactive");
+  //   setDeviceStatus("inactive");
+  //   setCurrentView("activation");
+  //   setSelectedProduct("");
+  //   toast("Status direset!");
+  // };
+
+  const renderView = () => {
+    switch (currentView) {
+      case "product":
+        return (
+          <div className="w-full">
+            <h2 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-gray-800 text-center sm:text-left">
+              Pilih Produk
+            </h2>
+            <div className="space-y-2 sm:space-y-3">
+              {["Personal", "Bisnis", "Enterprise"].map((name, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleProductSelect(name)}
+                  className={`w-full py-3 px-4 rounded-lg border transition-all duration-200 text-sm sm:text-base ${
+                    selectedProduct === name
+                      ? "bg-blue-600 text-white shadow-lg"
+                      : "bg-white hover:bg-gray-100 text-gray-800"
+                  }`}>
+                  {`Produk ${i + 1} - Lisensi ${name}`}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col sm:flex-row justify-between gap-2 sm:gap-0 mt-4 sm:mt-5">
+              <button
+                onClick={() => setCurrentView("activation")}
+                className="text-gray-600 hover:text-gray-800 py-2 px-4 text-sm sm:text-base">
+                ← Kembali
+              </button>
+              <button
+                onClick={handlePayment}
+                disabled={!selectedProduct}
+                className={`px-4 py-2 rounded-lg font-semibold transition text-sm sm:text-base ${
+                  selectedProduct
+                    ? "bg-green-600 text-white hover:bg-green-700"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}>
+                Lanjut ke Pembayaran
+              </button>
+            </div>
+          </div>
+        );
+
+      case "payment":
+        return (
+          <div className="w-full">
+            <h2 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-gray-800 text-center sm:text-left">
+              Pembayaran
+            </h2>
+            <p className="mb-2 text-sm sm:text-base text-gray-600 text-center sm:text-left">
+              Produk: {selectedProduct}
+            </p>
+            <input
+              type="email"
+              className="w-full p-3 sm:p-4 border rounded-lg mb-3 sm:mb-4 text-sm sm:text-base focus:ring-2 focus:ring-blue-500"
+              placeholder="Masukkan email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <div className="flex flex-col sm:flex-row justify-between gap-2 sm:gap-0 mt-3">
+              <button
+                onClick={() => setCurrentView("product")}
+                className="text-gray-600 hover:text-gray-800 py-2 px-4 text-sm sm:text-base">
+                ← Kembali
+              </button>
+              <button
+                onClick={handlePayment}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm sm:text-base">
+                Proses Pembayaran
+              </button>
+            </div>
+          </div>
+        );
+
+      case "confirmation":
+        return (
+          <div className="w-full">
+            <h2 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-gray-800 text-center sm:text-left">
+              Konfirmasi
+            </h2>
+            <p className="text-sm sm:text-base text-gray-600 mb-4 text-center sm:text-left">
+              Konfirmasi pembayaran Anda untuk menyelesaikan aktivasi.
+            </p>
+            <div className="flex flex-col sm:flex-row justify-between gap-2 sm:gap-0">
+              <button
+                onClick={() => setCurrentView("payment")}
+                className="text-gray-600 hover:text-gray-800 py-2 px-4 text-sm sm:text-base">
+                ← Kembali
+              </button>
+              <button
+                onClick={handleConfirmation}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm sm:text-base">
+                Konfirmasi Pembayaran
+              </button>
+            </div>
+          </div>
+        );
+
+      // case "success":
+      //   return (
+      //     <div className="w-full text-center">
+      //       <h2 className="text-xl sm:text-2xl font-bold text-green-600 mb-3">
+      //         ✅ Berhasil!
+      //       </h2>
+      //       <p className="text-sm sm:text-base text-gray-700 mb-4 sm:mb-5">
+      //         Device Active dan Login Berhasil
+      //       </p>
+      //       <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-3 sm:space-x-3">
+      //         <button
+      //           onClick={resetDevice}
+      //           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm sm:text-base">
+      //           Reset Status
+      //         </button>
+      //         <button
+      //           onClick={() => setCurrentView("login")}
+      //           className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm sm:text-base">
+      //           Kembali ke Login
+      //         </button>
+      //       </div>
+      //     </div>
+      //   );
+
+      default:
+        return (
+          <div className="w-full">
+            <h2 className="text-xl sm:text-2xl font-semibold mb-3 sm:mb-4 text-gray-800 text-center">
+              Login
+            </h2>
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full p-3 sm:p-4 mb-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-3 sm:p-4 mb-4 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
+            />
+            <div className="flex flex-col sm:flex-row justify-between gap-2 sm:gap-0">
+              {/* Activation button visibility based on device status */}
+              {deviceActivationStatus?.count === 0 && (
+                <button
+                  onClick={activateDevice}
+                  disabled={!isOnline}
+                  className={`${
+                    !isOnline
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-yellow-500 hover:bg-yellow-600"
+                  } text-white px-4 py-2 rounded-lg text-sm sm:text-base`}>
+                  Aktivasi Software {!isOnline ? "(Offline)" : ""}
+                </button>
+              )}
+              {deviceActivationStatus?.count === 1 && deviceActivationStatus.isActive === false && (
+                <div className="text-yellow-600 font-semibold py-2 px-4 text-sm sm:text-base">
+                  Menunggu Konfirmasi Pembayaran
+                </div>
+              )}
+              {/* Always show login button, but conditionally render activation button */}
+              <button
+                onClick={handleLogin}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm sm:text-base">
+                Login
+              </button>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4 sm:p-6">
+      <div className="w-full max-w-md sm:max-w-lg lg:max-w-xl bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl p-6 sm:p-8">
+        <h1 className="text-xl sm:text-2xl font-extrabold text-center mb-4 sm:mb-6 text-gray-800">
+          🚀 Sistem Aktivasi Perangkat
+        </h1>
+
+        {renderView()}
+
+        <div className="mt-4 sm:mt-6 text-xs sm:text-sm text-gray-600 text-center flex items-center justify-center space-x-2">
+          <span
+            className={`inline-flex items-center ${
+              isOnline ? "text-green-600" : "text-red-600"
+            }`}>
+            {isOnline ? "🟢" : "🔴"} Koneksi: {isOnline ? "Online" : "Offline"}
+          </span>
+        </div>
+        <Toaster />
+      </div>
+    </div>
+  );
+};
+
+export default App;

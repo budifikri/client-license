@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --color-indigo-500: #6366f1;
+  --color-purple-500: #a855f7;
+  --color-pink-500: #ec4899;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #ca8a04;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+}
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure proper centering and prevent layout shifts */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+/* Fix for potential flex centering issues */
+.min-h-screen {
+  min-height: 100vh;
+  width: 100vw;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+/* Remove default button styles that override Tailwind classes */
+button {
+  font-family: inherit;
+}
+
+/* Only apply default styles to buttons without Tailwind classes */
+button:not([class*="bg-"]) {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+button:not([class*="bg-"]):hover {
+  border-color: #646cff;
+}
+
+button:not([class*="bg-"]):focus,
+button:not([class*="bg-"]):focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+
+  a:hover {
+    color: #747bff;
+  }
+
+  button:not([class*="bg-"]) {
+    background-color: #f9f9f9;
+  }
+}
